@@ -40,13 +40,21 @@
     iframeZ: '',
     htmlOverflow: '',
     bodyOverflow: '',
-    htmlPaddingRight: '',
     bodyPaddingRight: '',
     htmlOverscroll: '',
     bodyOverscroll: ''
   };
   var DIM_Z = '2147483000';
   var FRAME_Z = '2147483001';
+
+  // Заранее резервируем место под скроллбар — иначе при overflow:hidden страница дёргается в сторону
+  (function reserveScrollbarGutter() {
+    if (document.getElementById('kochfit-scrollbar-gutter')) return;
+    var style = document.createElement('style');
+    style.id = 'kochfit-scrollbar-gutter';
+    style.textContent = 'html{scrollbar-gutter:stable;}';
+    document.head.appendChild(style);
+  })();
 
   /* ---------- Плавный скролл колёсиком (desktop) ---------- */
   var smoothEnabled = !(
@@ -197,7 +205,7 @@
     return Math.max(0, window.innerWidth - html.clientWidth);
   }
 
-  // overflow:hidden + компенсация скроллбара; без scrollTo-отката (он давал дёрганье)
+  // overflow:hidden; компенсацию делаем ОДИН раз (только body), иначе бывает сдвиг в сторону
   function lockScroll() {
     if (html.dataset.kochfitScrollLock === '1') return;
     stopSmooth();
@@ -207,19 +215,22 @@
 
     prev.htmlOverflow = html.style.overflow;
     prev.bodyOverflow = body.style.overflow;
-    prev.htmlPaddingRight = html.style.paddingRight;
     prev.bodyPaddingRight = body.style.paddingRight;
     prev.htmlOverscroll = html.style.overscrollBehavior;
     prev.bodyOverscroll = body.style.overscrollBehavior;
 
+    // Важно измерить ДО скрытия скроллбара
     var sbw = scrollbarWidth();
+
     html.style.overflow = 'hidden';
     body.style.overflow = 'hidden';
     html.style.overscrollBehavior = 'none';
     body.style.overscrollBehavior = 'none';
+
+    // Не трогаем padding у html — только body. Иначе двойная компенсация и дёрганье в сторону.
     if (sbw > 0) {
-      html.style.paddingRight = sbw + 'px';
-      body.style.paddingRight = sbw + 'px';
+      var currentPad = parseFloat(window.getComputedStyle(body).paddingRight) || 0;
+      body.style.paddingRight = currentPad + sbw + 'px';
     }
 
     html.dataset.kochfitScrollLock = '1';
@@ -233,7 +244,6 @@
     }
     html.style.overflow = prev.htmlOverflow;
     body.style.overflow = prev.bodyOverflow;
-    html.style.paddingRight = prev.htmlPaddingRight;
     body.style.paddingRight = prev.bodyPaddingRight;
     html.style.overscrollBehavior = prev.htmlOverscroll;
     body.style.overscrollBehavior = prev.bodyOverscroll;
