@@ -93,7 +93,7 @@
     width: var(--importance-target, 0%) !important;
     transform: scaleX(0);
     transform-origin: left center;
-    transition: transform .3s ease-in-out var(--reveal-delay, 0s);
+    transition: transform 1.5s ease-in-out var(--reveal-delay, 0s);
     will-change: transform;
   }
   [data-reveal="in"] .importance-fill,
@@ -321,7 +321,7 @@
 
 <script>
 (function () {
-  var DURATION = 300;
+  var DURATION = 1500;
 
   function easeInOut(t) {
     return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
@@ -375,7 +375,7 @@
       barEl.style.transform = 'scaleX(0)';
       barEl.style.width = target + '%';
       void barEl.offsetWidth;
-      barEl.style.transition = 'transform .3s ease-in-out';
+      barEl.style.transition = 'transform 1.5s ease-in-out';
     }
 
     root.dataset.importanceCounting = '1';
