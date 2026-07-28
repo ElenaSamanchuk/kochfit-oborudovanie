@@ -24,15 +24,6 @@
   var iframe = document.getElementById('kochfit-equipment-frame');
   if (!iframe || !wrap) return;
 
-  // Тильда часто вырезает <style>, поэтому smooth-scroll вешаем из скрипта
-  (function enableSmoothScroll() {
-    if (document.getElementById('kochfit-smooth-scroll')) return;
-    var style = document.createElement('style');
-    style.id = 'kochfit-smooth-scroll';
-    style.textContent = 'html{scroll-behavior:smooth;}@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto;}}';
-    document.head.appendChild(style);
-  })();
-
   var modalOpen = false;
   var lockedScrollY = 0;
   var lastContentHeight = 0;
@@ -42,20 +33,84 @@
   var html = document.documentElement;
   var body = document.body;
   var prev = {
-    htmlOverflow: '',
-    htmlPaddingRight: '',
-    bodyOverflow: '',
-    bodyPaddingRight: '',
     wrapPosition: '',
     wrapZ: '',
     iframePosition: '',
     iframeZ: ''
   };
 
-  function scrollbarWidth() {
-    return Math.max(0, window.innerWidth - html.clientWidth);
+  /* ---------- Плавный скролл колёсиком (desktop) ---------- */
+  var smoothEnabled = !(
+    window.matchMedia &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+  // На тач-устройствах оставляем нативный скролл
+  var isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  var smoothCurrent = window.scrollY || 0;
+  var smoothTarget = smoothCurrent;
+  var smoothRaf = 0;
+  var EASE = 0.085;
+
+  function maxScroll() {
+    var docH = Math.max(
+      body.scrollHeight,
+      html.scrollHeight,
+      body.offsetHeight,
+      html.offsetHeight
+    );
+    return Math.max(0, docH - (window.innerHeight || html.clientHeight || 0));
   }
 
+  function stopSmooth() {
+    if (smoothRaf) {
+      cancelAnimationFrame(smoothRaf);
+      smoothRaf = 0;
+    }
+    smoothCurrent = window.scrollY || 0;
+    smoothTarget = smoothCurrent;
+  }
+
+  function smoothStep() {
+    smoothRaf = 0;
+    if (modalOpen || !smoothEnabled) return;
+    smoothCurrent += (smoothTarget - smoothCurrent) * EASE;
+    if (Math.abs(smoothTarget - smoothCurrent) < 0.4) {
+      smoothCurrent = smoothTarget;
+      window.scrollTo(0, smoothCurrent);
+      return;
+    }
+    window.scrollTo(0, smoothCurrent);
+    smoothRaf = requestAnimationFrame(smoothStep);
+  }
+
+  function onSmoothWheel(event) {
+    if (modalOpen || !smoothEnabled || isTouch) return;
+    // Не перехватываем скролл внутри полей/чужих overflow-контейнеров
+    var el = event.target;
+    if (el && el.closest) {
+      var scrollable = el.closest('textarea, select, .t-popup, .t-zoomable, [data-kochfit-native-scroll]');
+      if (scrollable) return;
+    }
+
+    event.preventDefault();
+    var dy = event.deltaY;
+    if (event.deltaMode === 1) dy *= 16;
+    if (event.deltaMode === 2) dy *= window.innerHeight || 800;
+
+    smoothTarget = Math.max(0, Math.min(maxScroll(), smoothTarget + dy));
+    if (!smoothRaf) smoothRaf = requestAnimationFrame(smoothStep);
+  }
+
+  if (smoothEnabled && !isTouch) {
+    window.addEventListener('wheel', onSmoothWheel, { passive: false, capture: true });
+    window.addEventListener('scroll', function () {
+      if (modalOpen || smoothRaf) return;
+      smoothCurrent = window.scrollY || 0;
+      smoothTarget = smoothCurrent;
+    }, { passive: true });
+  }
+
+  /* ---------- Iframe / modal ---------- */
   function applyHeight(height) {
     if (!height || height < 100) return;
     lastContentHeight = height;
@@ -63,7 +118,6 @@
     iframe.style.height = height + 'px';
   }
 
-  // Видимый кусок iframe относительно его собственного документа
   function visibleSlice() {
     var rect = iframe.getBoundingClientRect();
     var vv = window.visualViewport;
@@ -111,6 +165,19 @@
     event.preventDefault();
   }
 
+  function onFreezeScroll() {
+    if (!modalOpen) return;
+    if (Math.abs((window.scrollY || 0) - lockedScrollY) > 0.5) {
+      window.scrollTo({ top: lockedScrollY, left: 0, behavior: 'instant' });
+    }
+  }
+
+  function onBlockKeys(event) {
+    if (!modalOpen) return;
+    var keys = ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ', 'Spacebar'];
+    if (keys.indexOf(event.key) !== -1) event.preventDefault();
+  }
+
   function bindScrollBlock(bind) {
     if (bind === scrollBlocked) return;
     scrollBlocked = bind;
@@ -120,25 +187,21 @@
     window[method]('touchmove', onBlockScroll, opts);
     document[method]('wheel', onBlockScroll, opts);
     document[method]('touchmove', onBlockScroll, opts);
+    window[method]('keydown', onBlockKeys, opts);
+    if (bind) {
+      window.addEventListener('scroll', onFreezeScroll, { passive: true });
+    } else {
+      window.removeEventListener('scroll', onFreezeScroll, { passive: true });
+    }
   }
 
+  // Без overflow:hidden — иначе страница прыгает и дёргается из‑за скроллбара
   function lockScroll() {
     if (html.dataset.kochfitScrollLock === '1') return;
-
+    stopSmooth();
     lockedScrollY = window.scrollY || window.pageYOffset || 0;
-    prev.htmlOverflow = html.style.overflow;
-    prev.htmlPaddingRight = html.style.paddingRight;
-    prev.bodyOverflow = body.style.overflow;
-    prev.bodyPaddingRight = body.style.paddingRight;
-
-    var sbw = scrollbarWidth();
-    html.style.overflow = 'hidden';
-    body.style.overflow = 'hidden';
-    if (sbw > 0) {
-      html.style.paddingRight = sbw + 'px';
-      body.style.paddingRight = sbw + 'px';
-    }
-
+    smoothCurrent = lockedScrollY;
+    smoothTarget = lockedScrollY;
     html.dataset.kochfitScrollLock = '1';
     bindScrollBlock(true);
   }
@@ -148,16 +211,9 @@
       bindScrollBlock(false);
       return;
     }
-
-    html.style.overflow = prev.htmlOverflow;
-    html.style.paddingRight = prev.htmlPaddingRight;
-    body.style.overflow = prev.bodyOverflow;
-    body.style.paddingRight = prev.bodyPaddingRight;
-
     delete html.dataset.kochfitScrollLock;
     bindScrollBlock(false);
-
-    // Не делаем scrollTo — позиция и так сохраняется, иначе будет «прыжок»
+    stopSmooth();
   }
 
   function showSiteDim() {
@@ -190,7 +246,6 @@
     }, 200);
   }
 
-  // Только поднимаем слой над затемнением, iframe остаётся в потоке страницы
   function elevateLayer(on) {
     if (on) {
       if (!layerSaved) {
@@ -206,7 +261,6 @@
       iframe.style.zIndex = '999991';
       return;
     }
-
     if (!layerSaved) return;
     wrap.style.position = prev.wrapPosition;
     wrap.style.zIndex = prev.wrapZ;
