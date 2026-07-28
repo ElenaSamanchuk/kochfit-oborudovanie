@@ -443,7 +443,8 @@
       return;
     }
     if (data.type === CLOSING_TYPE) {
-      // Оставляем слой на месте до реального close — только плавный fade попапа внутри
+      // Гасим внешнее затемнение вместе с анимацией закрытия попапа — иначе оно мелькает после unmount
+      hideSiteDim();
       return;
     }
     if (data.type === MODAL_TYPE) {
