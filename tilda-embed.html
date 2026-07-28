@@ -395,10 +395,10 @@
   }
 
   function fadeFrameOut() {
-    if (!prev.iframeOpacity && prev.iframeOpacity !== '') {
-      prev.iframeOpacity = iframe.style.opacity;
-      prev.iframeTransition = iframe.style.transition;
-    }
+    if (iframe.dataset.kochfitFading === '1') return;
+    iframe.dataset.kochfitFading = '1';
+    prev.iframeOpacity = iframe.style.opacity;
+    prev.iframeTransition = iframe.style.transition;
     iframe.style.transition = 'opacity .3s ease-in-out';
     iframe.style.opacity = '0';
   }
@@ -412,6 +412,7 @@
     modalOpen = open;
     if (modalOpen) {
       // Iframe на весь экран — попап не обрезается футером / краем видимой зоны
+      delete iframe.dataset.kochfitFading;
       iframe.style.transition = 'none';
       iframe.style.opacity = '1';
       elevateLayer(true);
@@ -428,6 +429,7 @@
         elevateLayer(false);
         iframe.style.transition = 'none';
         iframe.style.opacity = prev.iframeOpacity || '';
+        delete iframe.dataset.kochfitFading;
         prev.iframeOpacity = '';
         prev.iframeTransition = '';
         restoreTildaChrome();
