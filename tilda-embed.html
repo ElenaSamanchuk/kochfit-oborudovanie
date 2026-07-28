@@ -58,7 +58,7 @@
   var smoothCurrent = window.scrollY || 0;
   var smoothTarget = smoothCurrent;
   var smoothRaf = 0;
-  var EASE = 0.085;
+  var EASE = 0.06;
 
   function maxScroll() {
     var docH = Math.max(
@@ -106,7 +106,8 @@
     if (event.deltaMode === 1) dy *= 16;
     if (event.deltaMode === 2) dy *= window.innerHeight || 800;
 
-    smoothTarget = Math.max(0, Math.min(maxScroll(), smoothTarget + dy));
+    // чуть мягче реакция на колесо
+    smoothTarget = Math.max(0, Math.min(maxScroll(), smoothTarget + dy * 0.9));
     if (!smoothRaf) smoothRaf = requestAnimationFrame(smoothStep);
   }
 
@@ -252,7 +253,7 @@
       'z-index:' + DIM_Z,
       'background:rgba(0,0,0,0.4)',
       'opacity:0',
-      'transition:opacity .2s ease',
+      'transition:opacity .32s cubic-bezier(.16,1,.3,1)',
       'touch-action:none'
     ].join(';');
     siteDim.addEventListener('click', requestClose);
