@@ -148,6 +148,21 @@
     overflow: hidden !important;
     overscroll-behavior: none;
   }
+  /* Плавное закрытие попапа */
+  .kochfit-modal-leaving {
+    transition: opacity .3s ease-in-out !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+  .kochfit-modal-leaving [role="dialog"] {
+    transition: opacity .3s ease-in-out, transform .3s ease-in-out !important;
+    opacity: 0 !important;
+    transform: translateY(8px) !important;
+  }
+  .kochfit-modal-leaving [aria-hidden="true"] {
+    transition: opacity .3s ease-in-out !important;
+    opacity: 0 !important;
+  }
 </style>
 <script>
 (function () {
@@ -156,10 +171,84 @@
   var VIEWPORT_TYPE = 'kochfit-equipment-viewport';
   var PING_TYPE = 'kochfit-equipment-ping';
   var CLOSE_TYPE = 'kochfit-equipment-modal-close';
+  var CLOSING_TYPE = 'kochfit-equipment-modal-closing';
   var lastHeight = 0;
   var raf = 0;
   var modalOpen = false;
   var inIframe = window.parent && window.parent !== window;
+  var leaveMs = 300;
+  var modalLeaving = false;
+  var allowNativeClose = false;
+
+  function getModalRoot() {
+    var dialog = document.querySelector('[role="dialog"][aria-modal="true"]');
+    if (!dialog) return null;
+    return dialog.closest('.fixed.inset-0') || dialog.parentElement;
+  }
+
+  function notifyParentClosing() {
+    if (!inIframe) return;
+    try {
+      window.parent.postMessage({ type: CLOSING_TYPE }, '*');
+    } catch (e) {}
+  }
+
+  function beginModalLeave(proceed) {
+    if (modalLeaving) return;
+    var root = getModalRoot();
+    if (!root) {
+      proceed();
+      return;
+    }
+    modalLeaving = true;
+    notifyParentClosing();
+    root.classList.add('kochfit-modal-leaving');
+    setTimeout(function () {
+      allowNativeClose = true;
+      try {
+        proceed();
+      } finally {
+        allowNativeClose = false;
+        modalLeaving = false;
+      }
+    }, leaveMs);
+  }
+
+  function isCloseClick(event) {
+    var dialog = document.querySelector('[role="dialog"][aria-modal="true"]');
+    if (!dialog) return null;
+    var root = dialog.closest('.fixed.inset-0') || dialog.parentElement;
+    if (!root || !root.contains(event.target)) return null;
+    var closeBtn = event.target.closest('button[aria-label="Закрыть"]');
+    if (closeBtn && dialog.contains(closeBtn)) {
+      return function () { closeBtn.click(); };
+    }
+    var backdrop = root.querySelector('[aria-hidden="true"]');
+    if (backdrop && (event.target === backdrop || backdrop.contains(event.target))) {
+      return function () { backdrop.click(); };
+    }
+    return null;
+  }
+
+  document.addEventListener('click', function (event) {
+    if (allowNativeClose || modalLeaving) return;
+    var proceed = isCloseClick(event);
+    if (!proceed) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    beginModalLeave(proceed);
+  }, true);
+
+  document.addEventListener('keydown', function (event) {
+    if (event.key !== 'Escape') return;
+    if (allowNativeClose || modalLeaving) return;
+    if (!document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    beginModalLeave(function () {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+  }, true);
 
   function measure() {
     var doc = document.documentElement;
@@ -252,15 +341,23 @@
       return;
     }
     if (data.type === CLOSE_TYPE) {
-      var dialog = document.querySelector('[role="dialog"][aria-modal="true"]');
-      if (dialog && dialog.parentElement) {
-        var backdrop = dialog.parentElement.querySelector('[aria-hidden="true"]');
-        if (backdrop) {
-          backdrop.click();
-          return;
+      beginModalLeave(function () {
+        var dialog = document.querySelector('[role="dialog"][aria-modal="true"]');
+        if (dialog && dialog.parentElement) {
+          var backdrop = dialog.parentElement.querySelector('[aria-hidden="true"]');
+          if (backdrop) {
+            allowNativeClose = true;
+            try { backdrop.click(); } finally { allowNativeClose = false; }
+            return;
+          }
         }
-      }
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        allowNativeClose = true;
+        try {
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        } finally {
+          allowNativeClose = false;
+        }
+      });
     }
   }
 

@@ -19,6 +19,7 @@
   var VIEWPORT_TYPE = 'kochfit-equipment-viewport';
   var PING_TYPE = 'kochfit-equipment-ping';
   var CLOSE_TYPE = 'kochfit-equipment-modal-close';
+  var CLOSING_TYPE = 'kochfit-equipment-modal-closing';
 
   var wrap = document.getElementById('kochfit-equipment-wrap');
   var iframe = document.getElementById('kochfit-equipment-frame');
@@ -46,6 +47,8 @@
     iframeWidth: '',
     iframeHeight: '',
     iframeMaxHeight: '',
+    iframeOpacity: '',
+    iframeTransition: '',
     htmlOverscroll: '',
     bodyOverscroll: ''
   };
@@ -391,6 +394,15 @@
     layerSaved = false;
   }
 
+  function fadeFrameOut() {
+    if (!prev.iframeOpacity && prev.iframeOpacity !== '') {
+      prev.iframeOpacity = iframe.style.opacity;
+      prev.iframeTransition = iframe.style.transition;
+    }
+    iframe.style.transition = 'opacity .3s ease-in-out';
+    iframe.style.opacity = '0';
+  }
+
   function setModalOpen(open) {
     open = !!open;
     if (modalOpen === open) {
@@ -400,6 +412,8 @@
     modalOpen = open;
     if (modalOpen) {
       // Iframe на весь экран — попап не обрезается футером / краем видимой зоны
+      iframe.style.transition = 'none';
+      iframe.style.opacity = '1';
       elevateLayer(true);
       sendViewport();
       lockScroll();
@@ -408,11 +422,23 @@
       requestAnimationFrame(sendViewport);
       setTimeout(sendViewport, 30);
     } else {
-      elevateLayer(false);
       hideSiteDim();
-      restoreTildaChrome();
-      unlockScroll();
+      // Ждём fade попапа/iframe, потом возвращаем слой — без резкого скачка
+      setTimeout(function () {
+        elevateLayer(false);
+        iframe.style.transition = 'none';
+        iframe.style.opacity = prev.iframeOpacity || '';
+        prev.iframeOpacity = '';
+        prev.iframeTransition = '';
+        restoreTildaChrome();
+        unlockScroll();
+      }, 300);
     }
+  }
+
+  function onModalClosing() {
+    if (!modalOpen) return;
+    fadeFrameOut();
   }
 
   window.addEventListener('message', function (event) {
@@ -420,6 +446,10 @@
     if (!data || typeof data !== 'object') return;
     if (data.type === RESIZE_TYPE) {
       applyHeight(Number(data.height));
+      return;
+    }
+    if (data.type === CLOSING_TYPE) {
+      onModalClosing();
       return;
     }
     if (data.type === MODAL_TYPE) {
