@@ -26,6 +26,7 @@
 
   var modalOpen = false;
   var lockedScrollY = 0;
+  var lastContentHeight = 0;
   var siteDim = null;
   var html = document.documentElement;
   var body = document.body;
@@ -37,35 +38,38 @@
     bodyLeft: '',
     bodyRight: '',
     bodyWidth: '',
-    wrapPosition: '',
-    wrapZ: '',
-    iframePosition: '',
-    iframeZ: ''
+    iframeCssText: ''
   };
 
+  function viewSize() {
+    var vv = window.visualViewport;
+    if (vv) {
+      return {
+        top: vv.offsetTop || 0,
+        height: vv.height || window.innerHeight || html.clientHeight || 0
+      };
+    }
+    return {
+      top: 0,
+      height: window.innerHeight || html.clientHeight || 0
+    };
+  }
+
   function applyHeight(height) {
-    if (!height || height < 100 || modalOpen) return;
+    if (!height || height < 100) return;
+    lastContentHeight = height;
+    if (modalOpen) return;
     iframe.style.height = height + 'px';
   }
 
-  function visibleSlice() {
-    var rect = iframe.getBoundingClientRect();
-    var vh = window.innerHeight || html.clientHeight || 0;
-    var offsetTop = Math.max(0, -rect.top);
-    var visibleBottom = Math.min(iframe.offsetHeight || 0, vh - rect.top);
-    var height = Math.max(0, visibleBottom - offsetTop);
-    if (height < 120 && vh > 0) height = Math.min(vh, iframe.offsetHeight || vh);
-    return { offsetTop: offsetTop, height: height };
-  }
-
-  function sendViewport() {
+  function sendFixedViewport() {
     if (!modalOpen) return;
-    var slice = visibleSlice();
     try {
       iframe.contentWindow.postMessage({
         type: VIEWPORT_TYPE,
-        offsetTop: slice.offsetTop,
-        height: slice.height
+        mode: 'fixed',
+        offsetTop: 0,
+        height: viewSize().height
       }, '*');
     } catch (e) {}
   }
@@ -76,53 +80,20 @@
     } catch (e) {}
   }
 
-  function showSiteDim() {
-    if (siteDim) return;
-
-    prev.wrapPosition = wrap.style.position;
-    prev.wrapZ = wrap.style.zIndex;
-    prev.iframePosition = iframe.style.position;
-    prev.iframeZ = iframe.style.zIndex;
-
-    siteDim = document.createElement('div');
-    siteDim.id = 'kochfit-equipment-site-dim';
-    siteDim.setAttribute('aria-hidden', 'true');
-    siteDim.style.cssText = [
-      'position:fixed',
-      'inset:0',
-      'z-index:999990',
-      'background:rgba(0,0,0,0.4)',
-      'opacity:0',
-      'transition:opacity .2s ease',
-      'pointer-events:auto'
-    ].join(';');
-    siteDim.addEventListener('click', requestClose);
-    document.body.appendChild(siteDim);
-
-    // iframe выше затемнения, чтобы попап оставался кликабельным
-    wrap.style.position = 'relative';
-    wrap.style.zIndex = '999991';
-    iframe.style.position = 'relative';
-    iframe.style.zIndex = '999991';
-
-    requestAnimationFrame(function () {
-      if (siteDim) siteDim.style.opacity = '1';
-    });
+  function onBlockScroll(event) {
+    if (!modalOpen) return;
+    // Скролл внутри iframe (попап) не трогаем — событие там своё.
+    // Блокируем скролл/жест на странице Тильды.
+    event.preventDefault();
   }
 
-  function hideSiteDim() {
-    if (!siteDim) return;
-    var el = siteDim;
-    siteDim = null;
-    el.style.opacity = '0';
-    setTimeout(function () {
-      if (el.parentNode) el.parentNode.removeChild(el);
-    }, 200);
-
-    wrap.style.position = prev.wrapPosition;
-    wrap.style.zIndex = prev.wrapZ;
-    iframe.style.position = prev.iframePosition;
-    iframe.style.zIndex = prev.iframeZ;
+  function bindScrollBlock(bind) {
+    var opts = { passive: false, capture: true };
+    var method = bind ? 'addEventListener' : 'removeEventListener';
+    window[method]('wheel', onBlockScroll, opts);
+    window[method]('touchmove', onBlockScroll, opts);
+    document[method]('wheel', onBlockScroll, opts);
+    document[method]('touchmove', onBlockScroll, opts);
   }
 
   function lockScroll() {
@@ -143,7 +114,18 @@
     body.style.left = '0';
     body.style.right = '0';
     body.style.width = '100%';
+
+    // Тильда часто скроллит не body, а служебные контейнеры
+    ['#allrecords', '.t-body', '.t-records', '#t-header', '#t-footer'].forEach(function (sel) {
+      document.querySelectorAll(sel).forEach(function (el) {
+        if (el.dataset.kochfitPrevOverflow != null) return;
+        el.dataset.kochfitPrevOverflow = el.style.overflow || '';
+        el.style.overflow = 'hidden';
+      });
+    });
+
     html.dataset.kochfitScrollLock = '1';
+    bindScrollBlock(true);
   }
 
   function unlockScroll() {
@@ -155,20 +137,104 @@
     body.style.left = prev.bodyLeft;
     body.style.right = prev.bodyRight;
     body.style.width = prev.bodyWidth;
+
+    document.querySelectorAll('[data-kochfit-prev-overflow]').forEach(function (el) {
+      el.style.overflow = el.dataset.kochfitPrevOverflow;
+      delete el.dataset.kochfitPrevOverflow;
+    });
+
     delete html.dataset.kochfitScrollLock;
+    bindScrollBlock(false);
     window.scrollTo(0, lockedScrollY);
   }
 
+  function showSiteDim() {
+    if (siteDim) return;
+    siteDim = document.createElement('div');
+    siteDim.id = 'kochfit-equipment-site-dim';
+    siteDim.setAttribute('aria-hidden', 'true');
+    siteDim.style.cssText = [
+      'position:fixed',
+      'inset:0',
+      'z-index:999990',
+      'background:rgba(0,0,0,0.4)',
+      'opacity:0',
+      'transition:opacity .2s ease'
+    ].join(';');
+    siteDim.addEventListener('click', requestClose);
+    document.body.appendChild(siteDim);
+    requestAnimationFrame(function () {
+      if (siteDim) siteDim.style.opacity = '1';
+    });
+  }
+
+  function hideSiteDim() {
+    if (!siteDim) return;
+    var el = siteDim;
+    siteDim = null;
+    el.style.opacity = '0';
+    setTimeout(function () {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }, 200);
+  }
+
+  function fullscreenIframe() {
+    prev.iframeCssText = iframe.getAttribute('style') || '';
+    var view = viewSize();
+    iframe.style.position = 'fixed';
+    iframe.style.top = view.top + 'px';
+    iframe.style.left = '0';
+    iframe.style.right = '0';
+    iframe.style.bottom = 'auto';
+    iframe.style.width = '100%';
+    iframe.style.height = view.height + 'px';
+    iframe.style.maxHeight = 'none';
+    iframe.style.minHeight = '0';
+    iframe.style.zIndex = '999991';
+    iframe.style.border = '0';
+    iframe.style.display = 'block';
+    iframe.style.background = '#fff';
+    // Внутренний скролл iframe сбрасываем — попап position:fixed к новому viewport
+    try {
+      iframe.contentWindow.scrollTo(0, 0);
+    } catch (e) {}
+  }
+
+  function restoreIframe() {
+    if (prev.iframeCssText) {
+      iframe.setAttribute('style', prev.iframeCssText);
+    }
+    if (lastContentHeight > 0) {
+      iframe.style.height = lastContentHeight + 'px';
+    }
+  }
+
   function setModalOpen(open) {
-    modalOpen = !!open;
+    open = !!open;
+    if (modalOpen === open) {
+      if (open) {
+        fullscreenIframe();
+        sendFixedViewport();
+      }
+      return;
+    }
+    modalOpen = open;
     if (modalOpen) {
       lockScroll();
       showSiteDim();
-      sendViewport();
-      requestAnimationFrame(sendViewport);
-      setTimeout(sendViewport, 50);
-      setTimeout(sendViewport, 200);
+      fullscreenIframe();
+      sendFixedViewport();
+      requestAnimationFrame(function () {
+        fullscreenIframe();
+        sendFixedViewport();
+      });
+      setTimeout(function () {
+        fullscreenIframe();
+        sendFixedViewport();
+      }, 50);
+      setTimeout(sendFixedViewport, 200);
     } else {
+      restoreIframe();
       hideSiteDim();
       unlockScroll();
     }
@@ -186,12 +252,29 @@
     }
   });
 
-  window.addEventListener('resize', sendViewport);
+  window.addEventListener('resize', function () {
+    if (!modalOpen) return;
+    fullscreenIframe();
+    sendFixedViewport();
+  });
   window.addEventListener('orientationchange', function () {
-    setTimeout(sendViewport, 100);
+    setTimeout(function () {
+      if (!modalOpen) return;
+      fullscreenIframe();
+      sendFixedViewport();
+    }, 120);
   });
   if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', sendViewport);
+    window.visualViewport.addEventListener('resize', function () {
+      if (!modalOpen) return;
+      fullscreenIframe();
+      sendFixedViewport();
+    });
+    window.visualViewport.addEventListener('scroll', function () {
+      if (!modalOpen) return;
+      fullscreenIframe();
+      sendFixedViewport();
+    });
   }
 
   iframe.addEventListener('load', function () {

@@ -62,13 +62,35 @@
 <style id="kochfit-embed-reset">
   html, body { margin: 0; padding: 0; overflow-x: hidden; }
   body { min-height: 0; }
-  html.kochfit-modal-open .fixed.inset-0 {
+  /* Пока iframe на всю высоту контента — ограничиваем модалку видимой областью */
+  html.kochfit-modal-open:not(.kochfit-iframe-fixed) .fixed.inset-0 {
     top: var(--kochfit-vis-top, 0px) !important;
     right: 0 !important;
     bottom: auto !important;
     left: 0 !important;
     height: var(--kochfit-vis-height, 100vh) !important;
     max-height: var(--kochfit-vis-height, 100vh) !important;
+  }
+  /* Когда родитель растянул iframe на экран — обычный fixed на весь viewport */
+  html.kochfit-modal-open.kochfit-iframe-fixed .fixed.inset-0 {
+    top: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+  html.kochfit-modal-open.kochfit-iframe-fixed,
+  html.kochfit-modal-open.kochfit-iframe-fixed body {
+    overflow: hidden !important;
+    overscroll-behavior: none;
+  }
+  html.kochfit-modal-open.kochfit-iframe-fixed body {
+    touch-action: none;
+  }
+  html.kochfit-modal-open.kochfit-iframe-fixed .fixed.inset-0,
+  html.kochfit-modal-open.kochfit-iframe-fixed [role="dialog"] {
+    touch-action: pan-y;
   }
 </style>
 <script>
@@ -112,11 +134,20 @@
     raf = requestAnimationFrame(sendHeight);
   }
 
-  function applyViewport(offsetTop, height) {
+  function applyViewport(offsetTop, height, mode) {
+    var root = document.documentElement;
+    if (mode === 'fixed') {
+      root.classList.add('kochfit-iframe-fixed');
+      root.style.setProperty('--kochfit-vis-top', '0px');
+      root.style.setProperty('--kochfit-vis-height', '100%');
+      try { window.scrollTo(0, 0); } catch (e) {}
+      return;
+    }
+    root.classList.remove('kochfit-iframe-fixed');
     var top = Math.max(0, Math.round(Number(offsetTop) || 0));
     var h = Math.max(120, Math.round(Number(height) || 0));
-    document.documentElement.style.setProperty('--kochfit-vis-top', top + 'px');
-    document.documentElement.style.setProperty('--kochfit-vis-height', h + 'px');
+    root.style.setProperty('--kochfit-vis-top', top + 'px');
+    root.style.setProperty('--kochfit-vis-height', h + 'px');
   }
 
   function setModalOpen(open) {
@@ -129,8 +160,13 @@
     modalOpen = open;
     document.documentElement.classList.toggle('kochfit-modal-open', open);
     if (!open) {
+      document.documentElement.classList.remove('kochfit-iframe-fixed');
       document.documentElement.style.removeProperty('--kochfit-vis-top');
       document.documentElement.style.removeProperty('--kochfit-vis-height');
+    } else if (inIframe) {
+      // до ответа родителя не даём 100vh = высоте всего iframe
+      document.documentElement.style.setProperty('--kochfit-vis-top', '0px');
+      document.documentElement.style.setProperty('--kochfit-vis-height', Math.min(window.innerHeight, 900) + 'px');
     }
     if (inIframe) {
       window.parent.postMessage({ type: MODAL_TYPE, open: open }, '*');
@@ -157,7 +193,7 @@
       return;
     }
     if (data.type === VIEWPORT_TYPE) {
-      applyViewport(data.offsetTop, data.height);
+      applyViewport(data.offsetTop, data.height, data.mode);
       return;
     }
     if (data.type === CLOSE_TYPE) {
