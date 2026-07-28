@@ -363,14 +363,14 @@
     }
     modalOpen = open;
     if (modalOpen) {
+      // Сразу координаты — чтобы попап не ждал и не казался медленным
+      elevateLayer(true);
+      sendViewport();
       lockScroll();
       hideTildaChrome();
       showSiteDim();
-      elevateLayer(true);
-      sendViewport();
       requestAnimationFrame(sendViewport);
-      setTimeout(sendViewport, 50);
-      setTimeout(sendViewport, 200);
+      setTimeout(sendViewport, 30);
     } else {
       elevateLayer(false);
       hideSiteDim();
