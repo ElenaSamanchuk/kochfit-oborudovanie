@@ -1,0 +1,39 @@
+<!--
+  Вставьте этот код в блок «HTML-код» (T123) на Тильде.
+  После деплоя GitHub Pages URL должен быть:
+  https://elenasamanchuk.github.io/kochfit-oborudovanie/
+-->
+<div id="kochfit-equipment-wrap" style="width:100%;line-height:0;">
+  <iframe
+    id="kochfit-equipment-frame"
+    src="https://elenasamanchuk.github.io/kochfit-oborudovanie/"
+    title="Оборудование Kochfit"
+    loading="lazy"
+    style="width:100%;border:0;display:block;min-height:600px;overflow:hidden;"
+  ></iframe>
+</div>
+<script>
+(function () {
+  var MSG_TYPE = 'kochfit-equipment-resize';
+  var iframe = document.getElementById('kochfit-equipment-frame');
+  if (!iframe) return;
+
+  function applyHeight(height) {
+    if (!height || height < 100) return;
+    iframe.style.height = height + 'px';
+  }
+
+  window.addEventListener('message', function (event) {
+    var data = event.data;
+    if (!data || data.type !== MSG_TYPE) return;
+    applyHeight(Number(data.height));
+  });
+
+  // На случай, если сообщение пришло до готовности слушателя
+  iframe.addEventListener('load', function () {
+    try {
+      iframe.contentWindow.postMessage({ type: 'kochfit-equipment-ping' }, '*');
+    } catch (e) {}
+  });
+})();
+</script>
