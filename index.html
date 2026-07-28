@@ -88,12 +88,23 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+  /* Шкала: ширина = целевой %, анимация через scaleX с той же задержкой, что и карточка */
   .importance-fill {
-    width: 0% !important;
-    transition: width .3s ease-in-out;
-  }
-  [data-reveal="in"] .importance-fill {
     width: var(--importance-target, 0%) !important;
+    transform: scaleX(0);
+    transform-origin: left center;
+    transition: transform .3s ease-in-out var(--reveal-delay, 0s);
+    will-change: transform;
+  }
+  [data-reveal="in"] .importance-fill,
+  [data-reveal="in"].importance-fill {
+    transform: scaleX(1);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .importance-fill {
+      transition: none !important;
+      transform: scaleX(1) !important;
+    }
   }
   html.kochfit-modal-open.kochfit-await-viewport .fixed.inset-0 {
     opacity: 0 !important;
@@ -346,6 +357,10 @@
 
     function finish() {
       if (countEl) countEl.textContent = Math.round(target) + '%';
+      if (barEl) {
+        barEl.style.transform = 'scaleX(1)';
+        barEl.style.transition = 'none';
+      }
     }
 
     if (prefersReducedMotion()) {
@@ -353,9 +368,25 @@
       return;
     }
 
-    if (!countEl) return;
+    // Готовим шкалу к анимации: сброс + reflow, затем CSS transition с --reveal-delay
+    if (barEl) {
+      barEl.style.transition = 'none';
+      barEl.style.transformOrigin = 'left center';
+      barEl.style.transform = 'scaleX(0)';
+      barEl.style.width = target + '%';
+      void barEl.offsetWidth;
+      barEl.style.transition = 'transform .3s ease-in-out';
+    }
+
     root.dataset.importanceCounting = '1';
     setTimeout(function () {
+      if (barEl) barEl.style.transform = 'scaleX(1)';
+
+      if (!countEl) {
+        delete root.dataset.importanceCounting;
+        return;
+      }
+
       var start = performance.now();
       function frame(now) {
         var t = Math.min(1, (now - start) / DURATION);
