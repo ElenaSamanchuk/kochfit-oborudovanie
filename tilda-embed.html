@@ -58,7 +58,7 @@
   var smoothCurrent = window.scrollY || 0;
   var smoothTarget = smoothCurrent;
   var smoothRaf = 0;
-  var EASE = 0.085;
+  var EASE = 0.07;
 
   function maxScroll() {
     var docH = Math.max(
@@ -107,7 +107,7 @@
     if (event.deltaMode === 2) dy *= window.innerHeight || 800;
 
     // чуть мягче реакция на колесо
-    smoothTarget = Math.max(0, Math.min(maxScroll(), smoothTarget + dy));
+    smoothTarget = Math.max(0, Math.min(maxScroll(), smoothTarget + dy * 0.85));
     if (!smoothRaf) smoothRaf = requestAnimationFrame(smoothStep);
   }
 
