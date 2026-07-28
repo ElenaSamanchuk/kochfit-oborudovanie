@@ -3,16 +3,6 @@
   Страница:
   https://elenasamanchuk.github.io/kochfit-oborudovanie/
 -->
-<style id="kochfit-smooth-scroll">
-  html {
-    scroll-behavior: smooth;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    html {
-      scroll-behavior: auto;
-    }
-  }
-</style>
 <div id="kochfit-equipment-wrap" style="width:100%;line-height:0;">
   <iframe
     id="kochfit-equipment-frame"
@@ -33,6 +23,15 @@
   var wrap = document.getElementById('kochfit-equipment-wrap');
   var iframe = document.getElementById('kochfit-equipment-frame');
   if (!iframe || !wrap) return;
+
+  // Тильда часто вырезает <style>, поэтому smooth-scroll вешаем из скрипта
+  (function enableSmoothScroll() {
+    if (document.getElementById('kochfit-smooth-scroll')) return;
+    var style = document.createElement('style');
+    style.id = 'kochfit-smooth-scroll';
+    style.textContent = 'html{scroll-behavior:smooth;}@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto;}}';
+    document.head.appendChild(style);
+  })();
 
   var modalOpen = false;
   var lockedScrollY = 0;
