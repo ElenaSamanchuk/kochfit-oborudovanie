@@ -29,16 +29,14 @@
   var lastContentHeight = 0;
   var siteDim = null;
   var iframeStyleSaved = false;
+  var scrollBlocked = false;
   var html = document.documentElement;
   var body = document.body;
   var prev = {
     htmlOverflow: '',
+    htmlPaddingRight: '',
     bodyOverflow: '',
-    bodyPosition: '',
-    bodyTop: '',
-    bodyLeft: '',
-    bodyRight: '',
-    bodyWidth: '',
+    bodyPaddingRight: '',
     iframeCssText: ''
   };
 
@@ -54,6 +52,10 @@
       top: 0,
       height: window.innerHeight || html.clientHeight || 0
     };
+  }
+
+  function scrollbarWidth() {
+    return Math.max(0, window.innerWidth - html.clientWidth);
   }
 
   function applyHeight(height) {
@@ -83,12 +85,13 @@
 
   function onBlockScroll(event) {
     if (!modalOpen) return;
-    // Скролл внутри iframe (попап) не трогаем — событие там своё.
-    // Блокируем скролл/жест на странице Тильды.
+    // Не блокируем жесты внутри iframe — у него свой document.
     event.preventDefault();
   }
 
   function bindScrollBlock(bind) {
+    if (bind === scrollBlocked) return;
+    scrollBlocked = bind;
     var opts = { passive: false, capture: true };
     var method = bind ? 'addEventListener' : 'removeEventListener';
     window[method]('wheel', onBlockScroll, opts);
@@ -99,54 +102,45 @@
 
   function lockScroll() {
     if (html.dataset.kochfitScrollLock === '1') return;
+
     lockedScrollY = window.scrollY || window.pageYOffset || 0;
     prev.htmlOverflow = html.style.overflow;
+    prev.htmlPaddingRight = html.style.paddingRight;
     prev.bodyOverflow = body.style.overflow;
-    prev.bodyPosition = body.style.position;
-    prev.bodyTop = body.style.top;
-    prev.bodyLeft = body.style.left;
-    prev.bodyRight = body.style.right;
-    prev.bodyWidth = body.style.width;
+    prev.bodyPaddingRight = body.style.paddingRight;
 
+    // Без position:fixed — иначе после закрытия часто ломается скролл Тильды.
+    // Компенсируем ширину скроллбара, чтобы контент не дёргался.
+    var sbw = scrollbarWidth();
     html.style.overflow = 'hidden';
     body.style.overflow = 'hidden';
-    body.style.position = 'fixed';
-    body.style.top = '-' + lockedScrollY + 'px';
-    body.style.left = '0';
-    body.style.right = '0';
-    body.style.width = '100%';
-
-    // Тильда часто скроллит не body, а служебные контейнеры
-    ['#allrecords', '.t-body', '.t-records', '#t-header', '#t-footer'].forEach(function (sel) {
-      document.querySelectorAll(sel).forEach(function (el) {
-        if (el.dataset.kochfitPrevOverflow != null) return;
-        el.dataset.kochfitPrevOverflow = el.style.overflow || '';
-        el.style.overflow = 'hidden';
-      });
-    });
+    if (sbw > 0) {
+      html.style.paddingRight = sbw + 'px';
+      body.style.paddingRight = sbw + 'px';
+    }
 
     html.dataset.kochfitScrollLock = '1';
     bindScrollBlock(true);
   }
 
   function unlockScroll() {
-    if (html.dataset.kochfitScrollLock !== '1') return;
-    html.style.overflow = prev.htmlOverflow;
-    body.style.overflow = prev.bodyOverflow;
-    body.style.position = prev.bodyPosition;
-    body.style.top = prev.bodyTop;
-    body.style.left = prev.bodyLeft;
-    body.style.right = prev.bodyRight;
-    body.style.width = prev.bodyWidth;
+    if (html.dataset.kochfitScrollLock !== '1') {
+      bindScrollBlock(false);
+      return;
+    }
 
-    document.querySelectorAll('[data-kochfit-prev-overflow]').forEach(function (el) {
-      el.style.overflow = el.dataset.kochfitPrevOverflow;
-      delete el.dataset.kochfitPrevOverflow;
-    });
+    html.style.overflow = prev.htmlOverflow;
+    html.style.paddingRight = prev.htmlPaddingRight;
+    body.style.overflow = prev.bodyOverflow;
+    body.style.paddingRight = prev.bodyPaddingRight;
 
     delete html.dataset.kochfitScrollLock;
     bindScrollBlock(false);
-    window.scrollTo(0, lockedScrollY);
+
+    // Позицию почти не теряем (не было position:fixed), но на всякий случай вернём.
+    if (Math.abs((window.scrollY || 0) - lockedScrollY) > 1) {
+      window.scrollTo(0, lockedScrollY);
+    }
   }
 
   function showSiteDim() {
@@ -198,7 +192,6 @@
     iframe.style.border = '0';
     iframe.style.display = 'block';
     iframe.style.background = '#fff';
-    // Внутренний скролл iframe сбрасываем — попап position:fixed к новому viewport
     try {
       iframe.contentWindow.scrollTo(0, 0);
     } catch (e) {}
@@ -239,6 +232,7 @@
       }, 50);
       setTimeout(sendFixedViewport, 200);
     } else {
+      // Сначала вернуть iframe в поток страницы, потом разблокировать скролл
       restoreIframe();
       hideSiteDim();
       unlockScroll();
