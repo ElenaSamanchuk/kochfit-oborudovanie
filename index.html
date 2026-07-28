@@ -61,6 +61,10 @@
 
 <style id="kochfit-embed-reset">
   html, body { margin: 0; padding: 0; overflow-x: hidden; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+  }
   body { min-height: 0; }
   /* Пока iframe на всю высоту контента — ограничиваем модалку видимой областью */
   html.kochfit-modal-open:not(.kochfit-iframe-fixed) .fixed.inset-0 {
