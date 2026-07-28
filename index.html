@@ -88,12 +88,12 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
-  /* Шкала: ширина = целевой %, анимация через scaleX с той же задержкой, что и карточка */
+  /* Шкала: ширина = целевой %, длительность задаёт JS от величины % */
   .importance-fill {
     width: var(--importance-target, 0%) !important;
     transform: scaleX(0);
     transform-origin: left center;
-    transition: transform 1.5s ease-in-out var(--reveal-delay, 0s);
+    transition: transform var(--importance-duration, 1.5s) ease-in-out var(--reveal-delay, 0s);
     will-change: transform;
   }
   [data-reveal="in"] .importance-fill,
@@ -321,10 +321,17 @@
 
 <script>
 (function () {
-  var DURATION = 1500;
+  // ~одинаковая скорость заполнения: больше % → дольше анимация
+  var MS_PER_PERCENT = 26;
+  var MIN_DURATION = 450;
+  var MAX_DURATION = 2800;
 
   function easeInOut(t) {
     return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  }
+
+  function durationForTarget(target) {
+    return Math.round(Math.max(MIN_DURATION, Math.min(MAX_DURATION, target * MS_PER_PERCENT)));
   }
 
   function prefersReducedMotion() {
@@ -340,6 +347,7 @@
     var target = Number((countEl && countEl.dataset.target) || (barEl && barEl.dataset.target) || 0);
     if (!isFinite(target)) target = 0;
     target = Math.max(0, Math.min(100, target));
+    var duration = durationForTarget(target);
 
     // Если Vue снова сбросил процент в 0% — анимируем заново
     var countReset = countEl && (countEl.textContent || '').trim() === '0%' && target > 0;
@@ -368,14 +376,15 @@
       return;
     }
 
-    // Готовим шкалу к анимации: сброс + reflow, затем CSS transition с --reveal-delay
+    // Готовим шкалу к анимации: сброс + reflow, длительность от величины %
     if (barEl) {
+      barEl.style.setProperty('--importance-duration', duration + 'ms');
       barEl.style.transition = 'none';
       barEl.style.transformOrigin = 'left center';
       barEl.style.transform = 'scaleX(0)';
       barEl.style.width = target + '%';
       void barEl.offsetWidth;
-      barEl.style.transition = 'transform 1.5s ease-in-out';
+      barEl.style.transition = 'transform ' + duration + 'ms ease-in-out';
     }
 
     root.dataset.importanceCounting = '1';
@@ -389,7 +398,7 @@
 
       var start = performance.now();
       function frame(now) {
-        var t = Math.min(1, (now - start) / DURATION);
+        var t = Math.min(1, (now - start) / duration);
         var value = Math.round(target * easeInOut(t));
         countEl.textContent = value + '%';
         if (t < 1) requestAnimationFrame(frame);
