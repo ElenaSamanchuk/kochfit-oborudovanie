@@ -66,7 +66,11 @@
     html { scroll-behavior: auto; }
   }
   body { min-height: 0; }
-  /* Пока iframe на всю высоту контента — ограничиваем модалку видимой областью */
+  /* Пока ждём координаты от Тильды — не показываем модалку в неправильном месте */
+  html.kochfit-modal-open.kochfit-await-viewport .fixed.inset-0 {
+    visibility: hidden !important;
+  }
+  /* Ограничиваем модалку видимой областью внутри высокого iframe */
   html.kochfit-modal-open:not(.kochfit-iframe-fixed) .fixed.inset-0 {
     top: var(--kochfit-vis-top, 0px) !important;
     right: 0 !important;
@@ -144,7 +148,6 @@
       root.classList.add('kochfit-iframe-fixed');
       root.style.setProperty('--kochfit-vis-top', '0px');
       root.style.setProperty('--kochfit-vis-height', '100%');
-      try { window.scrollTo(0, 0); } catch (e) {}
       return;
     }
     root.classList.remove('kochfit-iframe-fixed');
@@ -165,12 +168,11 @@
     document.documentElement.classList.toggle('kochfit-modal-open', open);
     if (!open) {
       document.documentElement.classList.remove('kochfit-iframe-fixed');
+      document.documentElement.classList.remove('kochfit-await-viewport');
       document.documentElement.style.removeProperty('--kochfit-vis-top');
       document.documentElement.style.removeProperty('--kochfit-vis-height');
     } else if (inIframe) {
-      // до ответа родителя не даём 100vh = высоте всего iframe
-      document.documentElement.style.setProperty('--kochfit-vis-top', '0px');
-      document.documentElement.style.setProperty('--kochfit-vis-height', Math.min(window.innerHeight, 900) + 'px');
+      document.documentElement.classList.add('kochfit-await-viewport');
     }
     if (inIframe) {
       window.parent.postMessage({ type: MODAL_TYPE, open: open }, '*');
@@ -198,6 +200,7 @@
     }
     if (data.type === VIEWPORT_TYPE) {
       applyViewport(data.offsetTop, data.height, data.mode);
+      document.documentElement.classList.remove('kochfit-await-viewport');
       return;
     }
     if (data.type === CLOSE_TYPE) {

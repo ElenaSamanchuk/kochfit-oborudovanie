@@ -37,7 +37,7 @@
   var lockedScrollY = 0;
   var lastContentHeight = 0;
   var siteDim = null;
-  var iframeStyleSaved = false;
+  var layerSaved = false;
   var scrollBlocked = false;
   var html = document.documentElement;
   var body = document.body;
@@ -46,22 +46,11 @@
     htmlPaddingRight: '',
     bodyOverflow: '',
     bodyPaddingRight: '',
-    iframeCssText: ''
+    wrapPosition: '',
+    wrapZ: '',
+    iframePosition: '',
+    iframeZ: ''
   };
-
-  function viewSize() {
-    var vv = window.visualViewport;
-    if (vv) {
-      return {
-        top: vv.offsetTop || 0,
-        height: vv.height || window.innerHeight || html.clientHeight || 0
-      };
-    }
-    return {
-      top: 0,
-      height: window.innerHeight || html.clientHeight || 0
-    };
-  }
 
   function scrollbarWidth() {
     return Math.max(0, window.innerWidth - html.clientWidth);
@@ -74,14 +63,39 @@
     iframe.style.height = height + 'px';
   }
 
-  function sendFixedViewport() {
+  // Видимый кусок iframe относительно его собственного документа
+  function visibleSlice() {
+    var rect = iframe.getBoundingClientRect();
+    var vv = window.visualViewport;
+    var viewTop = vv ? vv.offsetTop : 0;
+    var viewHeight = vv ? vv.height : (window.innerHeight || html.clientHeight || 0);
+    var viewBottom = viewTop + viewHeight;
+
+    var visibleTop = Math.max(rect.top, viewTop);
+    var visibleBottom = Math.min(rect.bottom, viewBottom);
+    var height = Math.max(0, visibleBottom - visibleTop);
+    var offsetTop = Math.max(0, visibleTop - rect.top);
+
+    if (height < 120) {
+      height = Math.min(viewHeight, iframe.offsetHeight || viewHeight);
+      offsetTop = Math.max(0, -rect.top);
+    }
+
+    return {
+      offsetTop: Math.round(offsetTop),
+      height: Math.round(height)
+    };
+  }
+
+  function sendViewport() {
     if (!modalOpen) return;
+    var slice = visibleSlice();
     try {
       iframe.contentWindow.postMessage({
         type: VIEWPORT_TYPE,
-        mode: 'fixed',
-        offsetTop: 0,
-        height: viewSize().height
+        mode: 'slice',
+        offsetTop: slice.offsetTop,
+        height: slice.height
       }, '*');
     } catch (e) {}
   }
@@ -94,7 +108,6 @@
 
   function onBlockScroll(event) {
     if (!modalOpen) return;
-    // Не блокируем жесты внутри iframe — у него свой document.
     event.preventDefault();
   }
 
@@ -118,8 +131,6 @@
     prev.bodyOverflow = body.style.overflow;
     prev.bodyPaddingRight = body.style.paddingRight;
 
-    // Без position:fixed — иначе после закрытия часто ломается скролл Тильды.
-    // Компенсируем ширину скроллбара, чтобы контент не дёргался.
     var sbw = scrollbarWidth();
     html.style.overflow = 'hidden';
     body.style.overflow = 'hidden';
@@ -146,10 +157,7 @@
     delete html.dataset.kochfitScrollLock;
     bindScrollBlock(false);
 
-    // Позицию почти не теряем (не было position:fixed), но на всякий случай вернём.
-    if (Math.abs((window.scrollY || 0) - lockedScrollY) > 1) {
-      window.scrollTo(0, lockedScrollY);
-    }
+    // Не делаем scrollTo — позиция и так сохраняется, иначе будет «прыжок»
   }
 
   function showSiteDim() {
@@ -182,67 +190,48 @@
     }, 200);
   }
 
-  function fullscreenIframe() {
-    if (!iframeStyleSaved) {
-      prev.iframeCssText = iframe.getAttribute('style') || '';
-      iframeStyleSaved = true;
+  // Только поднимаем слой над затемнением, iframe остаётся в потоке страницы
+  function elevateLayer(on) {
+    if (on) {
+      if (!layerSaved) {
+        prev.wrapPosition = wrap.style.position;
+        prev.wrapZ = wrap.style.zIndex;
+        prev.iframePosition = iframe.style.position;
+        prev.iframeZ = iframe.style.zIndex;
+        layerSaved = true;
+      }
+      wrap.style.position = 'relative';
+      wrap.style.zIndex = '999991';
+      iframe.style.position = 'relative';
+      iframe.style.zIndex = '999991';
+      return;
     }
-    var view = viewSize();
-    iframe.style.position = 'fixed';
-    iframe.style.top = view.top + 'px';
-    iframe.style.left = '0';
-    iframe.style.right = '0';
-    iframe.style.bottom = 'auto';
-    iframe.style.width = '100%';
-    iframe.style.height = view.height + 'px';
-    iframe.style.maxHeight = 'none';
-    iframe.style.minHeight = '0';
-    iframe.style.zIndex = '999991';
-    iframe.style.border = '0';
-    iframe.style.display = 'block';
-    iframe.style.background = '#fff';
-    try {
-      iframe.contentWindow.scrollTo(0, 0);
-    } catch (e) {}
-  }
 
-  function restoreIframe() {
-    if (iframeStyleSaved) {
-      iframe.setAttribute('style', prev.iframeCssText || '');
-      iframeStyleSaved = false;
-    }
-    if (lastContentHeight > 0) {
-      iframe.style.height = lastContentHeight + 'px';
-    }
+    if (!layerSaved) return;
+    wrap.style.position = prev.wrapPosition;
+    wrap.style.zIndex = prev.wrapZ;
+    iframe.style.position = prev.iframePosition;
+    iframe.style.zIndex = prev.iframeZ;
+    layerSaved = false;
   }
 
   function setModalOpen(open) {
     open = !!open;
     if (modalOpen === open) {
-      if (open) {
-        fullscreenIframe();
-        sendFixedViewport();
-      }
+      if (open) sendViewport();
       return;
     }
     modalOpen = open;
     if (modalOpen) {
       lockScroll();
       showSiteDim();
-      fullscreenIframe();
-      sendFixedViewport();
-      requestAnimationFrame(function () {
-        fullscreenIframe();
-        sendFixedViewport();
-      });
-      setTimeout(function () {
-        fullscreenIframe();
-        sendFixedViewport();
-      }, 50);
-      setTimeout(sendFixedViewport, 200);
+      elevateLayer(true);
+      sendViewport();
+      requestAnimationFrame(sendViewport);
+      setTimeout(sendViewport, 50);
+      setTimeout(sendViewport, 200);
     } else {
-      // Сначала вернуть iframe в поток страницы, потом разблокировать скролл
-      restoreIframe();
+      elevateLayer(false);
       hideSiteDim();
       unlockScroll();
     }
@@ -260,29 +249,13 @@
     }
   });
 
-  window.addEventListener('resize', function () {
-    if (!modalOpen) return;
-    fullscreenIframe();
-    sendFixedViewport();
-  });
+  window.addEventListener('resize', sendViewport);
   window.addEventListener('orientationchange', function () {
-    setTimeout(function () {
-      if (!modalOpen) return;
-      fullscreenIframe();
-      sendFixedViewport();
-    }, 120);
+    setTimeout(sendViewport, 120);
   });
   if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', function () {
-      if (!modalOpen) return;
-      fullscreenIframe();
-      sendFixedViewport();
-    });
-    window.visualViewport.addEventListener('scroll', function () {
-      if (!modalOpen) return;
-      fullscreenIframe();
-      sendFixedViewport();
-    });
+    window.visualViewport.addEventListener('resize', sendViewport);
+    window.visualViewport.addEventListener('scroll', sendViewport);
   }
 
   iframe.addEventListener('load', function () {
