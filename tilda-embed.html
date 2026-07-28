@@ -38,23 +38,23 @@
     wrapZ: '',
     iframePosition: '',
     iframeZ: '',
-    htmlOverflow: '',
-    bodyOverflow: '',
-    bodyPaddingRight: '',
     htmlOverscroll: '',
     bodyOverscroll: ''
   };
   var DIM_Z = '2147483000';
   var FRAME_Z = '2147483001';
 
-  // Заранее резервируем место под скроллбар — иначе при overflow:hidden страница дёргается в сторону
-  (function reserveScrollbarGutter() {
-    if (document.getElementById('kochfit-scrollbar-gutter')) return;
-    var style = document.createElement('style');
-    style.id = 'kochfit-scrollbar-gutter';
-    style.textContent = 'html{scrollbar-gutter:stable;}';
-    document.head.appendChild(style);
-  })();
+  // Убираем следы старых версий (gutter / padding / overflow), из-за них была полоса и сдвиг
+  var oldGutter = document.getElementById('kochfit-scrollbar-gutter');
+  if (oldGutter && oldGutter.parentNode) oldGutter.parentNode.removeChild(oldGutter);
+  if (html.dataset.kochfitScrollLock === '1') {
+    html.style.overflow = '';
+    body.style.overflow = '';
+    body.style.paddingRight = '';
+    delete html.dataset.kochfitScrollLock;
+  }
+  var oldDim = document.getElementById('kochfit-equipment-site-dim');
+  if (oldDim && oldDim.parentNode) oldDim.parentNode.removeChild(oldDim);
 
   /* ---------- Плавный скролл колёсиком (desktop) ---------- */
   var smoothEnabled = !(
@@ -189,6 +189,14 @@
     if (keys.indexOf(event.key) !== -1) event.preventDefault();
   }
 
+  function onKeepScrollPosition() {
+    if (!modalOpen) return;
+    // Только если кто-то всё же сдвинул страницу (например, перетащил скроллбар)
+    if (Math.abs((window.scrollY || 0) - lockedScrollY) > 0) {
+      window.scrollTo(lockedScrollY, 0);
+    }
+  }
+
   function bindScrollBlock(bind) {
     if (bind === scrollBlocked) return;
     scrollBlocked = bind;
@@ -199,13 +207,14 @@
     document[method]('wheel', onBlockScroll, opts);
     document[method]('touchmove', onBlockScroll, opts);
     window[method]('keydown', onBlockKeys, opts);
+    if (bind) {
+      window.addEventListener('scroll', onKeepScrollPosition, { passive: true });
+    } else {
+      window.removeEventListener('scroll', onKeepScrollPosition, { passive: true });
+    }
   }
 
-  function scrollbarWidth() {
-    return Math.max(0, window.innerWidth - html.clientWidth);
-  }
-
-  // overflow:hidden; компенсацию делаем ОДИН раз (только body), иначе бывает сдвиг в сторону
+  // НЕ скрываем скроллбар и НЕ трогаем padding — из-за этого был сдвиг и светлая полоса
   function lockScroll() {
     if (html.dataset.kochfitScrollLock === '1') return;
     stopSmooth();
@@ -213,25 +222,10 @@
     smoothCurrent = lockedScrollY;
     smoothTarget = lockedScrollY;
 
-    prev.htmlOverflow = html.style.overflow;
-    prev.bodyOverflow = body.style.overflow;
-    prev.bodyPaddingRight = body.style.paddingRight;
     prev.htmlOverscroll = html.style.overscrollBehavior;
     prev.bodyOverscroll = body.style.overscrollBehavior;
-
-    // Важно измерить ДО скрытия скроллбара
-    var sbw = scrollbarWidth();
-
-    html.style.overflow = 'hidden';
-    body.style.overflow = 'hidden';
     html.style.overscrollBehavior = 'none';
     body.style.overscrollBehavior = 'none';
-
-    // Не трогаем padding у html — только body. Иначе двойная компенсация и дёрганье в сторону.
-    if (sbw > 0) {
-      var currentPad = parseFloat(window.getComputedStyle(body).paddingRight) || 0;
-      body.style.paddingRight = currentPad + sbw + 'px';
-    }
 
     html.dataset.kochfitScrollLock = '1';
     bindScrollBlock(true);
@@ -242,9 +236,6 @@
       bindScrollBlock(false);
       return;
     }
-    html.style.overflow = prev.htmlOverflow;
-    body.style.overflow = prev.bodyOverflow;
-    body.style.paddingRight = prev.bodyPaddingRight;
     html.style.overscrollBehavior = prev.htmlOverscroll;
     body.style.overscrollBehavior = prev.bodyOverscroll;
     delete html.dataset.kochfitScrollLock;
@@ -257,9 +248,14 @@
     siteDim = document.createElement('div');
     siteDim.id = 'kochfit-equipment-site-dim';
     siteDim.setAttribute('aria-hidden', 'true');
+    // 100vw/100vh накрывают и область скроллбара, inset:0 — нет
     siteDim.style.cssText = [
       'position:fixed',
-      'inset:0',
+      'top:0',
+      'left:0',
+      'width:100vw',
+      'height:100vh',
+      'height:100dvh',
       'z-index:' + DIM_Z,
       'background:rgba(0,0,0,0.4)',
       'opacity:0',
