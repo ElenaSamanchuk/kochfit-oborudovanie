@@ -77,6 +77,7 @@
   var MODAL_TYPE = 'kochfit-equipment-modal';
   var VIEWPORT_TYPE = 'kochfit-equipment-viewport';
   var PING_TYPE = 'kochfit-equipment-ping';
+  var CLOSE_TYPE = 'kochfit-equipment-modal-close';
   var lastHeight = 0;
   var raf = 0;
   var modalOpen = false;
@@ -157,6 +158,18 @@
     }
     if (data.type === VIEWPORT_TYPE) {
       applyViewport(data.offsetTop, data.height);
+      return;
+    }
+    if (data.type === CLOSE_TYPE) {
+      var dialog = document.querySelector('[role="dialog"][aria-modal="true"]');
+      if (dialog && dialog.parentElement) {
+        var backdrop = dialog.parentElement.querySelector('[aria-hidden="true"]');
+        if (backdrop) {
+          backdrop.click();
+          return;
+        }
+      }
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     }
   }
 

@@ -18,12 +18,15 @@
   var MODAL_TYPE = 'kochfit-equipment-modal';
   var VIEWPORT_TYPE = 'kochfit-equipment-viewport';
   var PING_TYPE = 'kochfit-equipment-ping';
+  var CLOSE_TYPE = 'kochfit-equipment-modal-close';
 
+  var wrap = document.getElementById('kochfit-equipment-wrap');
   var iframe = document.getElementById('kochfit-equipment-frame');
-  if (!iframe) return;
+  if (!iframe || !wrap) return;
 
   var modalOpen = false;
   var lockedScrollY = 0;
+  var siteDim = null;
   var html = document.documentElement;
   var body = document.body;
   var prev = {
@@ -33,7 +36,11 @@
     bodyTop: '',
     bodyLeft: '',
     bodyRight: '',
-    bodyWidth: ''
+    bodyWidth: '',
+    wrapPosition: '',
+    wrapZ: '',
+    iframePosition: '',
+    iframeZ: ''
   };
 
   function applyHeight(height) {
@@ -47,7 +54,6 @@
     var offsetTop = Math.max(0, -rect.top);
     var visibleBottom = Math.min(iframe.offsetHeight || 0, vh - rect.top);
     var height = Math.max(0, visibleBottom - offsetTop);
-    // небольшой запас на мобильные панели браузера
     if (height < 120 && vh > 0) height = Math.min(vh, iframe.offsetHeight || vh);
     return { offsetTop: offsetTop, height: height };
   }
@@ -62,6 +68,61 @@
         height: slice.height
       }, '*');
     } catch (e) {}
+  }
+
+  function requestClose() {
+    try {
+      iframe.contentWindow.postMessage({ type: CLOSE_TYPE }, '*');
+    } catch (e) {}
+  }
+
+  function showSiteDim() {
+    if (siteDim) return;
+
+    prev.wrapPosition = wrap.style.position;
+    prev.wrapZ = wrap.style.zIndex;
+    prev.iframePosition = iframe.style.position;
+    prev.iframeZ = iframe.style.zIndex;
+
+    siteDim = document.createElement('div');
+    siteDim.id = 'kochfit-equipment-site-dim';
+    siteDim.setAttribute('aria-hidden', 'true');
+    siteDim.style.cssText = [
+      'position:fixed',
+      'inset:0',
+      'z-index:999990',
+      'background:rgba(0,0,0,0.4)',
+      'opacity:0',
+      'transition:opacity .2s ease',
+      'pointer-events:auto'
+    ].join(';');
+    siteDim.addEventListener('click', requestClose);
+    document.body.appendChild(siteDim);
+
+    // iframe выше затемнения, чтобы попап оставался кликабельным
+    wrap.style.position = 'relative';
+    wrap.style.zIndex = '999991';
+    iframe.style.position = 'relative';
+    iframe.style.zIndex = '999991';
+
+    requestAnimationFrame(function () {
+      if (siteDim) siteDim.style.opacity = '1';
+    });
+  }
+
+  function hideSiteDim() {
+    if (!siteDim) return;
+    var el = siteDim;
+    siteDim = null;
+    el.style.opacity = '0';
+    setTimeout(function () {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }, 200);
+
+    wrap.style.position = prev.wrapPosition;
+    wrap.style.zIndex = prev.wrapZ;
+    iframe.style.position = prev.iframePosition;
+    iframe.style.zIndex = prev.iframeZ;
   }
 
   function lockScroll() {
@@ -102,11 +163,13 @@
     modalOpen = !!open;
     if (modalOpen) {
       lockScroll();
+      showSiteDim();
       sendViewport();
       requestAnimationFrame(sendViewport);
       setTimeout(sendViewport, 50);
       setTimeout(sendViewport, 200);
     } else {
+      hideSiteDim();
       unlockScroll();
     }
   }
