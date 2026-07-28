@@ -1,6 +1,6 @@
 <!--
   Вставьте этот код в блок «HTML-код» (T123) на Тильде.
-  После деплоя GitHub Pages URL должен быть:
+  Страница:
   https://elenasamanchuk.github.io/kochfit-oborudovanie/
 -->
 <div id="kochfit-equipment-wrap" style="width:100%;line-height:0;">
@@ -14,25 +14,126 @@
 </div>
 <script>
 (function () {
-  var MSG_TYPE = 'kochfit-equipment-resize';
+  var RESIZE_TYPE = 'kochfit-equipment-resize';
+  var MODAL_TYPE = 'kochfit-equipment-modal';
+  var VIEWPORT_TYPE = 'kochfit-equipment-viewport';
+  var PING_TYPE = 'kochfit-equipment-ping';
+
   var iframe = document.getElementById('kochfit-equipment-frame');
   if (!iframe) return;
 
+  var modalOpen = false;
+  var lockedScrollY = 0;
+  var html = document.documentElement;
+  var body = document.body;
+  var prev = {
+    htmlOverflow: '',
+    bodyOverflow: '',
+    bodyPosition: '',
+    bodyTop: '',
+    bodyLeft: '',
+    bodyRight: '',
+    bodyWidth: ''
+  };
+
   function applyHeight(height) {
-    if (!height || height < 100) return;
+    if (!height || height < 100 || modalOpen) return;
     iframe.style.height = height + 'px';
+  }
+
+  function visibleSlice() {
+    var rect = iframe.getBoundingClientRect();
+    var vh = window.innerHeight || html.clientHeight || 0;
+    var offsetTop = Math.max(0, -rect.top);
+    var visibleBottom = Math.min(iframe.offsetHeight || 0, vh - rect.top);
+    var height = Math.max(0, visibleBottom - offsetTop);
+    // небольшой запас на мобильные панели браузера
+    if (height < 120 && vh > 0) height = Math.min(vh, iframe.offsetHeight || vh);
+    return { offsetTop: offsetTop, height: height };
+  }
+
+  function sendViewport() {
+    if (!modalOpen) return;
+    var slice = visibleSlice();
+    try {
+      iframe.contentWindow.postMessage({
+        type: VIEWPORT_TYPE,
+        offsetTop: slice.offsetTop,
+        height: slice.height
+      }, '*');
+    } catch (e) {}
+  }
+
+  function lockScroll() {
+    if (html.dataset.kochfitScrollLock === '1') return;
+    lockedScrollY = window.scrollY || window.pageYOffset || 0;
+    prev.htmlOverflow = html.style.overflow;
+    prev.bodyOverflow = body.style.overflow;
+    prev.bodyPosition = body.style.position;
+    prev.bodyTop = body.style.top;
+    prev.bodyLeft = body.style.left;
+    prev.bodyRight = body.style.right;
+    prev.bodyWidth = body.style.width;
+
+    html.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+    body.style.position = 'fixed';
+    body.style.top = '-' + lockedScrollY + 'px';
+    body.style.left = '0';
+    body.style.right = '0';
+    body.style.width = '100%';
+    html.dataset.kochfitScrollLock = '1';
+  }
+
+  function unlockScroll() {
+    if (html.dataset.kochfitScrollLock !== '1') return;
+    html.style.overflow = prev.htmlOverflow;
+    body.style.overflow = prev.bodyOverflow;
+    body.style.position = prev.bodyPosition;
+    body.style.top = prev.bodyTop;
+    body.style.left = prev.bodyLeft;
+    body.style.right = prev.bodyRight;
+    body.style.width = prev.bodyWidth;
+    delete html.dataset.kochfitScrollLock;
+    window.scrollTo(0, lockedScrollY);
+  }
+
+  function setModalOpen(open) {
+    modalOpen = !!open;
+    if (modalOpen) {
+      lockScroll();
+      sendViewport();
+      requestAnimationFrame(sendViewport);
+      setTimeout(sendViewport, 50);
+      setTimeout(sendViewport, 200);
+    } else {
+      unlockScroll();
+    }
   }
 
   window.addEventListener('message', function (event) {
     var data = event.data;
-    if (!data || data.type !== MSG_TYPE) return;
-    applyHeight(Number(data.height));
+    if (!data || typeof data !== 'object') return;
+    if (data.type === RESIZE_TYPE) {
+      applyHeight(Number(data.height));
+      return;
+    }
+    if (data.type === MODAL_TYPE) {
+      setModalOpen(!!data.open);
+    }
   });
 
-  // На случай, если сообщение пришло до готовности слушателя
+  window.addEventListener('resize', sendViewport);
+  window.addEventListener('orientationchange', function () {
+    setTimeout(sendViewport, 100);
+  });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', sendViewport);
+  }
+
   iframe.addEventListener('load', function () {
     try {
-      iframe.contentWindow.postMessage({ type: 'kochfit-equipment-ping' }, '*');
+      iframe.contentWindow.postMessage({ type: PING_TYPE }, '*');
     } catch (e) {}
   });
 })();

@@ -62,12 +62,25 @@
 <style id="kochfit-embed-reset">
   html, body { margin: 0; padding: 0; overflow-x: hidden; }
   body { min-height: 0; }
+  html.kochfit-modal-open .fixed.inset-0 {
+    top: var(--kochfit-vis-top, 0px) !important;
+    right: 0 !important;
+    bottom: auto !important;
+    left: 0 !important;
+    height: var(--kochfit-vis-height, 100vh) !important;
+    max-height: var(--kochfit-vis-height, 100vh) !important;
+  }
 </style>
 <script>
 (function () {
-  var MSG_TYPE = 'kochfit-equipment-resize';
+  var RESIZE_TYPE = 'kochfit-equipment-resize';
+  var MODAL_TYPE = 'kochfit-equipment-modal';
+  var VIEWPORT_TYPE = 'kochfit-equipment-viewport';
+  var PING_TYPE = 'kochfit-equipment-ping';
   var lastHeight = 0;
   var raf = 0;
+  var modalOpen = false;
+  var inIframe = window.parent && window.parent !== window;
 
   function measure() {
     var doc = document.documentElement;
@@ -82,47 +95,111 @@
     ));
   }
 
-  function send() {
+  function sendHeight() {
     raf = 0;
+    if (modalOpen) return;
     var height = measure();
     if (!height || Math.abs(height - lastHeight) < 2) return;
     lastHeight = height;
-    if (window.parent && window.parent !== window) {
-      window.parent.postMessage({ type: MSG_TYPE, height: height }, '*');
+    if (inIframe) {
+      window.parent.postMessage({ type: RESIZE_TYPE, height: height }, '*');
     }
   }
 
-  function schedule() {
+  function scheduleHeight() {
     if (raf) return;
-    raf = requestAnimationFrame(send);
+    raf = requestAnimationFrame(sendHeight);
+  }
+
+  function applyViewport(offsetTop, height) {
+    var top = Math.max(0, Math.round(Number(offsetTop) || 0));
+    var h = Math.max(120, Math.round(Number(height) || 0));
+    document.documentElement.style.setProperty('--kochfit-vis-top', top + 'px');
+    document.documentElement.style.setProperty('--kochfit-vis-height', h + 'px');
+  }
+
+  function setModalOpen(open) {
+    if (modalOpen === open) {
+      if (open && inIframe) {
+        window.parent.postMessage({ type: MODAL_TYPE, open: true }, '*');
+      }
+      return;
+    }
+    modalOpen = open;
+    document.documentElement.classList.toggle('kochfit-modal-open', open);
+    if (!open) {
+      document.documentElement.style.removeProperty('--kochfit-vis-top');
+      document.documentElement.style.removeProperty('--kochfit-vis-height');
+    }
+    if (inIframe) {
+      window.parent.postMessage({ type: MODAL_TYPE, open: open }, '*');
+    } else if (open) {
+      var vv = window.visualViewport;
+      applyViewport(vv ? vv.offsetTop : 0, vv ? vv.height : window.innerHeight);
+    }
+  }
+
+  function isModalPresent() {
+    return !!document.querySelector('[role="dialog"][aria-modal="true"]');
+  }
+
+  function syncModalState() {
+    setModalOpen(isModalPresent());
+  }
+
+  function onMessage(event) {
+    var data = event.data;
+    if (!data || typeof data !== 'object') return;
+    if (data.type === PING_TYPE) {
+      scheduleHeight();
+      if (modalOpen) setModalOpen(true);
+      return;
+    }
+    if (data.type === VIEWPORT_TYPE) {
+      applyViewport(data.offsetTop, data.height);
+    }
   }
 
   function boot() {
-    schedule();
-    window.addEventListener('message', function (event) {
-      if (event.data && event.data.type === 'kochfit-equipment-ping') schedule();
-    });
-    window.addEventListener('load', schedule);
-    window.addEventListener('resize', schedule);
-    window.addEventListener('orientationchange', schedule);
+    window.addEventListener('message', onMessage);
+    window.addEventListener('load', scheduleHeight);
+    window.addEventListener('resize', scheduleHeight);
+    window.addEventListener('orientationchange', scheduleHeight);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', function () {
+        if (!inIframe && modalOpen) {
+          applyViewport(window.visualViewport.offsetTop, window.visualViewport.height);
+        }
+        scheduleHeight();
+      });
+      window.visualViewport.addEventListener('scroll', function () {
+        if (!inIframe && modalOpen) {
+          applyViewport(window.visualViewport.offsetTop, window.visualViewport.height);
+        }
+      });
+    }
     if (document.fonts && document.fonts.ready) {
-      document.fonts.ready.then(schedule).catch(function () {});
+      document.fonts.ready.then(scheduleHeight).catch(function () {});
     }
     if (typeof ResizeObserver !== 'undefined' && document.body) {
-      new ResizeObserver(schedule).observe(document.body);
+      new ResizeObserver(scheduleHeight).observe(document.body);
     }
     if (typeof MutationObserver !== 'undefined' && document.documentElement) {
-      new MutationObserver(schedule).observe(document.documentElement, {
+      new MutationObserver(function () {
+        syncModalState();
+        scheduleHeight();
+      }).observe(document.documentElement, {
         childList: true,
         subtree: true,
         attributes: true,
         characterData: true
       });
     }
-    // Vue/async images can settle a bit later
     [100, 300, 800, 1600, 3000].forEach(function (ms) {
-      setTimeout(schedule, ms);
+      setTimeout(scheduleHeight, ms);
     });
+    syncModalState();
+    scheduleHeight();
   }
 
   if (document.readyState === 'loading') {
@@ -132,6 +209,5 @@
   }
 })();
 </script>
-
 </body>
 </html>
