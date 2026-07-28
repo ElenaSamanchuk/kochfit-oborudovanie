@@ -30,6 +30,7 @@
   var siteDim = null;
   var layerSaved = false;
   var scrollBlocked = false;
+  var chromeHidden = [];
   var html = document.documentElement;
   var body = document.body;
   var prev = {
@@ -38,6 +39,8 @@
     iframePosition: '',
     iframeZ: ''
   };
+  var DIM_Z = '2147483000';
+  var FRAME_Z = '2147483001';
 
   /* ---------- Плавный скролл колёсиком (desktop) ---------- */
   var smoothEnabled = !(
@@ -224,7 +227,7 @@
     siteDim.style.cssText = [
       'position:fixed',
       'inset:0',
-      'z-index:999990',
+      'z-index:' + DIM_Z,
       'background:rgba(0,0,0,0.4)',
       'opacity:0',
       'transition:opacity .2s ease'
@@ -246,6 +249,63 @@
     }, 200);
   }
 
+  // Липкое меню Тильды оказывается «между» затемнением и iframe и выглядит обрезанным
+  function hideTildaChrome() {
+    restoreTildaChrome();
+    var seen = [];
+    function hideEl(el) {
+      if (!el || seen.indexOf(el) !== -1) return;
+      if (el === wrap || wrap.contains(el) || el === siteDim) return;
+      if (el.id === 'kochfit-equipment-site-dim') return;
+      seen.push(el);
+      chromeHidden.push({
+        el: el,
+        visibility: el.style.visibility,
+        pointerEvents: el.style.pointerEvents,
+        opacity: el.style.opacity
+      });
+      el.style.visibility = 'hidden';
+      el.style.pointerEvents = 'none';
+      el.style.opacity = '0';
+    }
+
+    [
+      '#t-header',
+      '.t-header',
+      '.t-header__fixedcontainer',
+      '.t-header__wrapper',
+      '.t-header__container',
+      '.t450',
+      '.t282',
+      '.tmenu-mobile',
+      '.t-menuburger',
+      '.t396__filter'
+    ].forEach(function (sel) {
+      document.querySelectorAll(sel).forEach(hideEl);
+    });
+
+    // На случай кастомного sticky/fixed меню сверху
+    Array.prototype.forEach.call(document.body.querySelectorAll('*'), function (el) {
+      if (seen.indexOf(el) !== -1 || wrap.contains(el) || el === wrap || el === siteDim) return;
+      var cs = window.getComputedStyle(el);
+      if (cs.position !== 'fixed' && cs.position !== 'sticky') return;
+      var r = el.getBoundingClientRect();
+      if (r.width < (window.innerWidth || 0) * 0.45) return;
+      if (r.height < 28 || r.height > 160) return;
+      if (r.top > 90 || r.bottom < 0) return;
+      hideEl(el);
+    });
+  }
+
+  function restoreTildaChrome() {
+    chromeHidden.forEach(function (item) {
+      item.el.style.visibility = item.visibility;
+      item.el.style.pointerEvents = item.pointerEvents;
+      item.el.style.opacity = item.opacity;
+    });
+    chromeHidden = [];
+  }
+
   function elevateLayer(on) {
     if (on) {
       if (!layerSaved) {
@@ -256,9 +316,9 @@
         layerSaved = true;
       }
       wrap.style.position = 'relative';
-      wrap.style.zIndex = '999991';
+      wrap.style.zIndex = FRAME_Z;
       iframe.style.position = 'relative';
-      iframe.style.zIndex = '999991';
+      iframe.style.zIndex = FRAME_Z;
       return;
     }
     if (!layerSaved) return;
@@ -278,6 +338,7 @@
     modalOpen = open;
     if (modalOpen) {
       lockScroll();
+      hideTildaChrome();
       showSiteDim();
       elevateLayer(true);
       sendViewport();
@@ -287,6 +348,7 @@
     } else {
       elevateLayer(false);
       hideSiteDim();
+      restoreTildaChrome();
       unlockScroll();
     }
   }
