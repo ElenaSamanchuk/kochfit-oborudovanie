@@ -88,17 +88,25 @@
     height: auto !important;
     max-height: none !important;
   }
+  html.kochfit-modal-open,
+  html.kochfit-modal-open body {
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
+  }
+  html.kochfit-modal-open body {
+    touch-action: none;
+  }
+  html.kochfit-modal-open .fixed.inset-0 {
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+  }
+  html.kochfit-modal-open [role="dialog"] {
+    touch-action: pan-y;
+  }
   html.kochfit-modal-open.kochfit-iframe-fixed,
   html.kochfit-modal-open.kochfit-iframe-fixed body {
     overflow: hidden !important;
     overscroll-behavior: none;
-  }
-  html.kochfit-modal-open.kochfit-iframe-fixed body {
-    touch-action: none;
-  }
-  html.kochfit-modal-open.kochfit-iframe-fixed .fixed.inset-0,
-  html.kochfit-modal-open.kochfit-iframe-fixed [role="dialog"] {
-    touch-action: pan-y;
   }
 </style>
 <script>

@@ -37,7 +37,13 @@
     wrapPosition: '',
     wrapZ: '',
     iframePosition: '',
-    iframeZ: ''
+    iframeZ: '',
+    htmlOverflow: '',
+    bodyOverflow: '',
+    htmlPaddingRight: '',
+    bodyPaddingRight: '',
+    htmlOverscroll: '',
+    bodyOverscroll: ''
   };
   var DIM_Z = '2147483000';
   var FRAME_Z = '2147483001';
@@ -168,13 +174,6 @@
     event.preventDefault();
   }
 
-  function onFreezeScroll() {
-    if (!modalOpen) return;
-    if (Math.abs((window.scrollY || 0) - lockedScrollY) > 0.5) {
-      window.scrollTo({ top: lockedScrollY, left: 0, behavior: 'instant' });
-    }
-  }
-
   function onBlockKeys(event) {
     if (!modalOpen) return;
     var keys = ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ', 'Spacebar'];
@@ -191,20 +190,37 @@
     document[method]('wheel', onBlockScroll, opts);
     document[method]('touchmove', onBlockScroll, opts);
     window[method]('keydown', onBlockKeys, opts);
-    if (bind) {
-      window.addEventListener('scroll', onFreezeScroll, { passive: true });
-    } else {
-      window.removeEventListener('scroll', onFreezeScroll, { passive: true });
-    }
   }
 
-  // Без overflow:hidden — иначе страница прыгает и дёргается из‑за скроллбара
+  function scrollbarWidth() {
+    return Math.max(0, window.innerWidth - html.clientWidth);
+  }
+
+  // overflow:hidden + компенсация скроллбара; без scrollTo-отката (он давал дёрганье)
   function lockScroll() {
     if (html.dataset.kochfitScrollLock === '1') return;
     stopSmooth();
     lockedScrollY = window.scrollY || window.pageYOffset || 0;
     smoothCurrent = lockedScrollY;
     smoothTarget = lockedScrollY;
+
+    prev.htmlOverflow = html.style.overflow;
+    prev.bodyOverflow = body.style.overflow;
+    prev.htmlPaddingRight = html.style.paddingRight;
+    prev.bodyPaddingRight = body.style.paddingRight;
+    prev.htmlOverscroll = html.style.overscrollBehavior;
+    prev.bodyOverscroll = body.style.overscrollBehavior;
+
+    var sbw = scrollbarWidth();
+    html.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+    html.style.overscrollBehavior = 'none';
+    body.style.overscrollBehavior = 'none';
+    if (sbw > 0) {
+      html.style.paddingRight = sbw + 'px';
+      body.style.paddingRight = sbw + 'px';
+    }
+
     html.dataset.kochfitScrollLock = '1';
     bindScrollBlock(true);
   }
@@ -214,6 +230,12 @@
       bindScrollBlock(false);
       return;
     }
+    html.style.overflow = prev.htmlOverflow;
+    body.style.overflow = prev.bodyOverflow;
+    html.style.paddingRight = prev.htmlPaddingRight;
+    body.style.paddingRight = prev.bodyPaddingRight;
+    html.style.overscrollBehavior = prev.htmlOverscroll;
+    body.style.overscrollBehavior = prev.bodyOverscroll;
     delete html.dataset.kochfitScrollLock;
     bindScrollBlock(false);
     stopSmooth();
@@ -230,9 +252,12 @@
       'z-index:' + DIM_Z,
       'background:rgba(0,0,0,0.4)',
       'opacity:0',
-      'transition:opacity .2s ease'
+      'transition:opacity .2s ease',
+      'touch-action:none'
     ].join(';');
     siteDim.addEventListener('click', requestClose);
+    siteDim.addEventListener('wheel', onBlockScroll, { passive: false });
+    siteDim.addEventListener('touchmove', onBlockScroll, { passive: false });
     document.body.appendChild(siteDim);
     requestAnimationFrame(function () {
       if (siteDim) siteDim.style.opacity = '1';
