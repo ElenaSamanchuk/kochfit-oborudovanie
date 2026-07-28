@@ -28,6 +28,7 @@
   var lockedScrollY = 0;
   var lastContentHeight = 0;
   var siteDim = null;
+  var iframeStyleSaved = false;
   var html = document.documentElement;
   var body = document.body;
   var prev = {
@@ -179,7 +180,10 @@
   }
 
   function fullscreenIframe() {
-    prev.iframeCssText = iframe.getAttribute('style') || '';
+    if (!iframeStyleSaved) {
+      prev.iframeCssText = iframe.getAttribute('style') || '';
+      iframeStyleSaved = true;
+    }
     var view = viewSize();
     iframe.style.position = 'fixed';
     iframe.style.top = view.top + 'px';
@@ -201,8 +205,9 @@
   }
 
   function restoreIframe() {
-    if (prev.iframeCssText) {
-      iframe.setAttribute('style', prev.iframeCssText);
+    if (iframeStyleSaved) {
+      iframe.setAttribute('style', prev.iframeCssText || '');
+      iframeStyleSaved = false;
     }
     if (lastContentHeight > 0) {
       iframe.style.height = lastContentHeight + 'px';
