@@ -147,39 +147,73 @@
     iframe.style.height = height + 'px';
   }
 
-  // Попап всегда на весь экран — иначе у футера видимый кусок iframe слишком маленький
-  function applyFixedFrameGeometry() {
+  function viewMetrics() {
     var vv = window.visualViewport;
-    if (vv) {
-      iframe.style.top = Math.round(vv.offsetTop) + 'px';
-      iframe.style.left = Math.round(vv.offsetLeft) + 'px';
-      iframe.style.width = Math.round(vv.width) + 'px';
-      iframe.style.height = Math.round(vv.height) + 'px';
-      iframe.style.right = 'auto';
-      iframe.style.bottom = 'auto';
-      iframe.style.maxHeight = Math.round(vv.height) + 'px';
-      return Math.round(vv.height);
+    var viewTop = vv ? vv.offsetTop : 0;
+    var viewHeight = vv ? vv.height : (window.innerHeight || html.clientHeight || 0);
+    return {
+      viewTop: viewTop,
+      viewHeight: viewHeight,
+      viewBottom: viewTop + viewHeight
+    };
+  }
+
+  function visibleSlice() {
+    var rect = iframe.getBoundingClientRect();
+    var m = viewMetrics();
+    var visibleTop = Math.max(rect.top, m.viewTop);
+    var visibleBottom = Math.min(rect.bottom, m.viewBottom);
+    var height = Math.max(0, visibleBottom - visibleTop);
+    var offsetTop = Math.max(0, visibleTop - rect.top);
+
+    if (height < 120) {
+      height = Math.min(m.viewHeight, iframe.offsetHeight || m.viewHeight);
+      offsetTop = Math.max(0, m.viewTop - rect.top);
     }
-    var h = window.innerHeight || html.clientHeight || 0;
-    iframe.style.top = '0';
-    iframe.style.left = '0';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
-    iframe.style.width = '100%';
-    iframe.style.height = h + 'px';
-    iframe.style.maxHeight = '100dvh';
-    return h;
+
+    return {
+      offsetTop: Math.round(offsetTop),
+      height: Math.round(height)
+    };
+  }
+
+  // Если у футера виден только низ iframe — чуть поднимаем страницу,
+  // чтобы попапу хватило высоты. Без fullscreen и без возврата скролла назад.
+  function ensureModalRoom() {
+    var m = viewMetrics();
+    var minHeight = Math.round(m.viewHeight * 0.9);
+    var slice = visibleSlice();
+    if (slice.height >= minHeight) return;
+
+    var rect = iframe.getBoundingClientRect();
+    var y = window.scrollY || window.pageYOffset || 0;
+    var nextY = y;
+
+    // Футер съедает низ экрана → скроллим вверх, пока низ iframe не упрётся в низ viewport
+    if (rect.bottom < m.viewBottom - 2) {
+      nextY = y - (m.viewBottom - rect.bottom);
+    }
+
+    nextY = Math.max(0, nextY);
+    if (Math.abs(nextY - y) < 1) return;
+
+    var prevBehavior = html.style.scrollBehavior;
+    html.style.scrollBehavior = 'auto';
+    window.scrollTo(0, nextY);
+    html.style.scrollBehavior = prevBehavior;
+    smoothCurrent = nextY;
+    smoothTarget = nextY;
   }
 
   function sendViewport() {
     if (!modalOpen) return;
-    var h = applyFixedFrameGeometry();
+    var slice = visibleSlice();
     try {
       iframe.contentWindow.postMessage({
         type: VIEWPORT_TYPE,
-        mode: 'fixed',
-        offsetTop: 0,
-        height: h
+        mode: 'slice',
+        offsetTop: slice.offsetTop,
+        height: Math.max(slice.height, 120)
       }, '*');
     } catch (e) {}
   }
@@ -355,52 +389,23 @@
       if (!layerSaved) {
         prev.wrapPosition = wrap.style.position;
         prev.wrapZ = wrap.style.zIndex;
-        prev.wrapMinHeight = wrap.style.minHeight;
         prev.iframePosition = iframe.style.position;
         prev.iframeZ = iframe.style.zIndex;
-        prev.iframeTop = iframe.style.top;
-        prev.iframeLeft = iframe.style.left;
-        prev.iframeRight = iframe.style.right;
-        prev.iframeBottom = iframe.style.bottom;
-        prev.iframeWidth = iframe.style.width;
-        prev.iframeHeight = iframe.style.height;
-        prev.iframeMaxHeight = iframe.style.maxHeight;
         layerSaved = true;
       }
-      // Спейсер на месте блока, чтобы страница не прыгала, пока iframe на весь экран
-      var spacer = lastContentHeight || iframe.offsetHeight || 600;
+      // Только z-index: iframe остаётся в потоке — без прыжка вверх
       wrap.style.position = 'relative';
       wrap.style.zIndex = FRAME_Z;
-      wrap.style.minHeight = spacer + 'px';
-
-      iframe.style.position = 'fixed';
+      iframe.style.position = 'relative';
       iframe.style.zIndex = FRAME_Z;
-      applyFixedFrameGeometry();
       return;
     }
     if (!layerSaved) return;
     wrap.style.position = prev.wrapPosition;
     wrap.style.zIndex = prev.wrapZ;
-    wrap.style.minHeight = prev.wrapMinHeight;
     iframe.style.position = prev.iframePosition;
     iframe.style.zIndex = prev.iframeZ;
-    iframe.style.top = prev.iframeTop;
-    iframe.style.left = prev.iframeLeft;
-    iframe.style.right = prev.iframeRight;
-    iframe.style.bottom = prev.iframeBottom;
-    iframe.style.width = prev.iframeWidth || '100%';
-    iframe.style.maxHeight = prev.iframeMaxHeight;
-    iframe.style.height = (lastContentHeight ? lastContentHeight + 'px' : prev.iframeHeight);
     layerSaved = false;
-  }
-
-  function fadeFrameOut() {
-    if (iframe.dataset.kochfitFading === '1') return;
-    iframe.dataset.kochfitFading = '1';
-    prev.iframeOpacity = iframe.style.opacity;
-    prev.iframeTransition = iframe.style.transition;
-    iframe.style.transition = 'opacity .3s ease-in-out';
-    iframe.style.opacity = '0';
   }
 
   function setModalOpen(open) {
@@ -411,10 +416,9 @@
     }
     modalOpen = open;
     if (modalOpen) {
-      // Iframe на весь экран — попап не обрезается футером / краем видимой зоны
-      delete iframe.dataset.kochfitFading;
-      iframe.style.transition = 'none';
-      iframe.style.opacity = '1';
+      stopSmooth();
+      // При необходимости чуть поднимаем страницу от футера, затем лочим скролл тут
+      ensureModalRoom();
       elevateLayer(true);
       sendViewport();
       lockScroll();
@@ -423,24 +427,12 @@
       requestAnimationFrame(sendViewport);
       setTimeout(sendViewport, 30);
     } else {
+      // Сразу, без паузы и без возврата скролла «куда были»
+      elevateLayer(false);
       hideSiteDim();
-      // Ждём fade попапа/iframe, потом возвращаем слой — без резкого скачка
-      setTimeout(function () {
-        elevateLayer(false);
-        iframe.style.transition = 'none';
-        iframe.style.opacity = prev.iframeOpacity || '';
-        delete iframe.dataset.kochfitFading;
-        prev.iframeOpacity = '';
-        prev.iframeTransition = '';
-        restoreTildaChrome();
-        unlockScroll();
-      }, 300);
+      restoreTildaChrome();
+      unlockScroll();
     }
-  }
-
-  function onModalClosing() {
-    if (!modalOpen) return;
-    fadeFrameOut();
   }
 
   window.addEventListener('message', function (event) {
@@ -451,7 +443,7 @@
       return;
     }
     if (data.type === CLOSING_TYPE) {
-      onModalClosing();
+      // Оставляем слой на месте до реального close — только плавный fade попапа внутри
       return;
     }
     if (data.type === MODAL_TYPE) {
